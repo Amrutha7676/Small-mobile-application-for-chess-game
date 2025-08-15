@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Two Player Chess</title>
+<style>
+body { font-family: Arial, sans-serif; text-align: center; }
+button { margin: 10px; padding: 8px 12px; font-size: 16px; cursor: pointer; }
+#message { font-size: 20px; margin: 10px 0; font-weight: bold; color: red; }
+#chessboard { display: grid; grid-template-columns: repeat(8, 1fr); width: 90vmin; height: 90vmin; margin: auto; border: 2px solid black; }
+.square { display: flex; justify-content: center; align-items: center; font-size: 4vmin; }
+.light { background-color: #f0d9b5; }
+.dark { background-color: #b58863; }
+.selected { outline: 3px solid red; }
+.check { outline: 3px solid orange; }
+.legal-move { outline: 2px solid green; }
+.lost-pieces { margin-top: 10px; font-size: 18px; }
+</style>
+</head>
+<body>
+
+<h2>Two Player Chess</h2>
+<button id="startBtn">Start / Restart Game</button>
+<div id="message"></div>
+<div id="chessboard"></div>
+<div class="lost-pieces">
+  <div>White lost: <span id="whiteLost"></span></div>
+  <div>Black lost: <span id="blackLost"></span></div>
+</div>
+
+<script>
+const boardEl = document.getElementById("chessboard");
+const startBtn = document.getElementById("startBtn");
+const messageEl = document.getElementById("message");
+const whiteLostEl = document.getElementById("whiteLost");
+const blackLostEl = document.getElementById("blackLost");
+
+const piecesUnicode = {
+  r:"♜", n:"♞", b:"♝", q:"♛", k:"♚", p:"♟",
+  R:"♖", N:"♘", B:"♗", Q:"♕", K:"♔", P:"♙"
+};
+
+let board=[], selected=null, turn='w', legalMoves=[], whiteLost=[], blackLost=[], gameOver=false;
+
+startBtn.onclick = startGame;
+
+function startGame(){
+  board=[
+    ['r','n','b','q','k','b','n','r'],
+    ['p','p','p','p','p','p','p','p'],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['P','P','P','P','P','P','P','P'],
+    ['R','N','B','Q','K','B','N','R']
+  ];
+  turn='w'; selected=null; legalMoves=[]; whiteLost=[]; blackLost=[]; gameOver=false; messageEl.textContent='';
+  updateLostPieces(); drawBoard();
+}
+
+// Deep copy
+function copyBoard(b){ return b.map(r=>r.slice()); }
+
+function drawBoard(){
+  boardEl.innerHTML = "";
+  const oppColor = turn === 'w' ? 'b' : 'w';
+  const oppKing = findKing(oppColor);
+  
+  // Check if opponent is in checkmate first
+  if(oppKing && isCheckmate(oppColor)){
+    messageEl.textContent = `Checkmate! ${turn === 'w' ? 'White' : 'Black'} wins! 🎉`;
+    gameOver = true;
+  } else if(oppKing && isCheck(oppColor)) {
+    messageEl.textContent = `${oppColor === 'w' ? 'White' : 'Black'} king is in check!`;
+  } else {
+    messageEl.textContent = '';
+  }
+
+  for(let r = 0; r < 8; r++){
+    for(let c = 0; c < 8; c++){
+      const square = document.createElement("div");
+      square.classList.add("square", (r+c)%2 === 0 ? "light" : "dark");
+      const piece = board[r][c];
+      if(piece) square.textContent = piecesUnicode[piece];
+
+      if(selected && selected.r === r && selected.c === c) square.classList.add("selected");
+      if(legalMoves.some(m => m.r === r && m.c === c)) square.classList.add("legal-move");
+      if(oppKing && r === oppKing.r && c === oppKing.c && isCheck(oppColor)) square.classList.add("check");
+
+      square.addEventListener("click", () => handleClick(r, c));
+      boardEl.appendChild(square);
+    }
+  }
+}
+
+function handleClick(r,c){
+  if(gameOver) return;
+  const piece=board[r][c];
+  if(piece && isTurn(piece)){ selected={r,c}; legalMoves=getLegalMoves(r,c,board,turn); }
+  else if(selected && legalMoves.some(m=>m.r===r && m.c===c)){
+    movePiece(selected.r,selected.c,r,c); selected=null; legalMoves=[];
+    drawBoard();
+    if(isCheckmate(turn==='w'?'b':'w')){ messageEl.textContent=`Checkmate! ${turn==='w'?'White':'Black'} wins! 🎉`; gameOver=true; }
+    else turn=turn==='w'?'b':'w';
+  } else { selected=null; legalMoves=[]; }
+  drawBoard();
+}
+
+function movePiece(r1,c1,r2,c2){
+  const m=board[r1][c1], cap=board[r2][c2];
+  if(cap){ if(cap===cap.toUpperCase()) whiteLost.push(cap); else blackLost.push(cap); updateLostPieces(); }
+  board[r2][c2]=m; board[r1][c1]='';
+}
+
+function updateLostPieces(){ whiteLostEl.textContent=whiteLost.map(p=>piecesUnicode[p]).join(' '); blackLostEl.textContent=blackLost.map(p=>piecesUnicode[p]).join(' '); }
+
+function isTurn(piece){ return (turn==='w' && piece===piece.toUpperCase())||(turn==='b' && piece===piece.toLowerCase()); }
+
+function findKing(color,b=board){ const k=color==='w'?'K':'k'; for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(b[r][c]===k) return {r,c}; return null; }
+
+function isCheck(color,b=board){
+  const king=findKing(color,b); if(!king) return false;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=b[r][c]; if(!p) continue;
+    if((color==='w'&&p===p.toLowerCase())||(color==='b'&&p===p.toUpperCase())) if(canAttack(p,r,c,king.r,king.c,b)) return true;
+  }
+  return false;
+}
+
+// Full legal move generation per piece
+function getLegalMoves(r,c,b,color){
+  const p=b[r][c], moves=[];
+  const dirs={'P':[[ -1,0],[ -1,-1],[ -1,1],[ -2,0]],'p':[[1,0],[1,-1],[1,1],[2,0]],
+              'R':[[0,1],[1,0],[0,-1],[-1,0]], 'r':[[0,1],[1,0],[0,-1],[-1,0]],
+              'B':[[1,1],[1,-1],[-1,1],[-1,-1]], 'b':[[1,1],[1,-1],[-1,1],[-1,-1]],
+              'Q':[[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]], 'q':[[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]],
+              'N':[[2,1],[1,2],[2,-1],[-1,2],[-2,1],[1,-2],[-2,-1],[-1,-2]], 'n':[[2,1],[1,2],[2,-1],[-1,2],[-2,1],[1,-2],[-2,-1],[-1,-2]],
+              'K':[[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]], 'k':[[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]]};
+  const sliding='RrBbQq';
+  const pawnTwo={'P':1,'p':6};
+  for(const d of dirs[p]){
+    const [dr,dc]=d;
+    let nr=r+dr, nc=c+dc;
+    if(p.toLowerCase()==='p'){
+      if(dc===0){
+        if(nr>=0 && nr<8 && !b[nr][nc]) moves.push({r:nr,c:nc});
+        if((r===pawnTwo[p]) && !b[r+dr/2][c] && !b[nr][nc]) moves.push({r:nr,c:nc});
+      } else {
+        if(nr>=0 && nr<8 && nc>=0 && nc<8 && b[nr][nc] && ((p===p.toUpperCase() && b[nr][nc]===b[nr][nc].toLowerCase())||(p===p.toLowerCase() && b[nr][nc]===b[nr][nc].toUpperCase()))) moves.push({r:nr,c:nc});
+      }
+    } else if(sliding.includes(p)){
+      while(nr>=0 && nr<8 && nc>=0 && nc<8){
+        if(!b[nr][nc]) moves.push({r:nr,c:nc});
+        else{ if(isOpponent(p,b[nr][nc])) moves.push({r:nr,c:nc}); break; }
+        nr+=dr; nc+=dc;
+      }
+    } else {
+      if(nr>=0 && nr<8 && nc>=0 && nc<8 && (!b[nr][nc] || isOpponent(p,b[nr][nc]))) moves.push({r:nr,c:nc});
+    }
+  }
+  // Filter out moves leaving king in check
+  return moves.filter(m=>{ const b2=copyBoard(b); b2[m.r][m.c]=p; b2[r][c]=''; return !isCheck(color,b2); });
+}
+
+function isOpponent(p,target){ return (p===p.toUpperCase() && target===target.toLowerCase()) || (p===p.toLowerCase() && target===target.toUpperCase()); }
+
+function canAttack(p,r1,c1,r2,c2,b){
+  const type=p.toLowerCase(), dr=r2-r1, dc=c2-c1, absDr=Math.abs(dr), absDc=Math.abs(dc);
+  if(type==='p') return (p===p.toLowerCase() && dr===1 && absDc===1) || (p===p.toUpperCase() && dr===-1 && absDc===1);
+  if(type==='r') return (dr===0||dc===0) && pathClear(r1,c1,r2,c2,b);
+  if(type==='n') return absDr*absDc===2;
+  if(type==='b') return absDr===absDc && pathClear(r1,c1,r2,c2,b);
+  if(type==='q') return (dr===0||dc===0||absDr===absDc) && pathClear(r1,c1,r2,c2,b);
+  if(type==='k') return Math.max(absDr,absDc)===1;
+  return false;
+}
+
+function pathClear(r1,c1,r2,c2,b){ const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1); let r=r1+dr, c=c1+dc; while(r!==r2 || c!==c2){ if(b[r][c]!=='') return false; r+=dr; c+=dc; } return true; }
+
+function isCheckmate(color){ if(!isCheck(color)) return false; for(let r=0;r<8;r++) for(let c=0;c<8;c++){ const p=board[r][c]; if(!p || (color==='w' && p===p.toLowerCase())||(color==='b' && p===p.toUpperCase())) continue; if(getLegalMoves(r,c,board,color).length>0) return false; } return true; }
+
+startGame();
+</script>
+</body>
+</html>
